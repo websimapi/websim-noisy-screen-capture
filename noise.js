@@ -3,6 +3,7 @@ let ctx = canvas.getContext('2d');
 let startButton = document.getElementById('startCapture');
 let selectRegionButton = document.getElementById('selectRegion');
 let clearRegionButton = document.getElementById('clearRegion');
+let toggleFilterButton = document.getElementById('toggleFilter');
 let mediaStream = null;
 let previousImageData = null;
 
@@ -12,6 +13,9 @@ let startX = 0;
 let startY = 0;
 let cropRegion = null;
 let isDragging = false;
+
+// Filter state
+let isFilterEnabled = true;
 
 // Set canvas size to window size
 function resizeCanvas() {
@@ -77,12 +81,21 @@ function updateChangedPixels(newImageData) {
       if (next[i] !== prev[i] || 
           next[i + 1] !== prev[i + 1] || 
           next[i + 2] !== prev[i + 2]) {
-        // Generate new random noise for changed pixel
-        const pixel = getRandomPixel();
-        current[i] = pixel[0];
-        current[i + 1] = pixel[1];
-        current[i + 2] = pixel[2];
-        current[i + 3] = pixel[3];
+        
+        if (isFilterEnabled) {
+          // Generate new random noise for changed pixel
+          const pixel = getRandomPixel();
+          current[i] = pixel[0];
+          current[i + 1] = pixel[1];
+          current[i + 2] = pixel[2];
+          current[i + 3] = pixel[3];
+        } else {
+          // Use actual video pixel
+          current[i] = next[i];
+          current[i + 1] = next[i + 1];
+          current[i + 2] = next[i + 2];
+          current[i + 3] = next[i + 3];
+        }
       }
     }
   }
@@ -232,6 +245,17 @@ clearRegionButton.addEventListener('click', clearCropRegion);
 canvas.addEventListener('mousedown', handleMouseDown);
 canvas.addEventListener('mousemove', handleMouseMove);
 canvas.addEventListener('mouseup', handleMouseUp);
+
+// Add toggle filter handler
+toggleFilterButton.addEventListener('click', () => {
+  isFilterEnabled = !isFilterEnabled;
+  toggleFilterButton.textContent = isFilterEnabled ? 'Disable Filter' : 'Enable Filter';
+  
+  // Regenerate noise if no capture is active
+  if (!mediaStream) {
+    generateNoise(cropRegion);
+  }
+});
 
 // Handle visibility change
 document.addEventListener('visibilitychange', () => {
