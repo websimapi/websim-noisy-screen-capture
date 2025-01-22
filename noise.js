@@ -4,6 +4,7 @@ let startButton = document.getElementById('startCapture');
 let selectRegionButton = document.getElementById('selectRegion');
 let clearRegionButton = document.getElementById('clearRegion');
 let toggleFilterButton = document.getElementById('toggleFilter');
+let invertSelectionButton = document.getElementById('invertSelection');
 let sensitivitySlider = document.getElementById('sensitivity');
 let sensitivityValue = document.getElementById('sensitivityValue');
 let mediaStream = null;
@@ -18,6 +19,7 @@ let isDragging = false;
 
 // Filter state
 let isFilterEnabled = true;
+let isInverted = false;
 let sensitivity = 10;
 
 // Update sensitivity display
@@ -66,8 +68,14 @@ function generateNoise(region = null) {
   ctx.putImageData(imageData, region ? region.x : 0, region ? region.y : 0);
 }
 
-// Initial noise generation
-generateNoise();
+// Check if a point is inside the crop region
+function isInsideCropRegion(x, y) {
+  if (!cropRegion) return false;
+  return x >= cropRegion.x && 
+         x < cropRegion.x + cropRegion.width && 
+         y >= cropRegion.y && 
+         y < cropRegion.y + cropRegion.height;
+}
 
 // Compare pixels and update only changed ones
 function updateChangedPixels(newImageData) {
@@ -76,17 +84,16 @@ function updateChangedPixels(newImageData) {
     return;
   }
 
-  const region = cropRegion || { x: 0, y: 0, width: canvas.width, height: canvas.height };
-  const currentImageData = ctx.getImageData(region.x, region.y, region.width, region.height);
+  const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const current = currentImageData.data;
   const prev = previousImageData.data;
   const next = newImageData.data;
 
-  const threshold = (sensitivity / 100) * 255; // Convert sensitivity percentage to pixel value
+  const threshold = (sensitivity / 100) * 255;
 
-  for (let y = 0; y < region.height; y++) {
-    for (let x = 0; x < region.width; x++) {
-      const i = (y * region.width + x) * 4;
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4;
       
       // Calculate the difference between previous and current frame
       const diffR = Math.abs(next[i] - prev[i]);
@@ -95,8 +102,18 @@ function updateChangedPixels(newImageData) {
       
       // Check if the difference exceeds the threshold
       if (diffR > threshold || diffG > threshold || diffB > threshold) {
-        if (isFilterEnabled) {
+        const isInside = isInsideCropRegion(x, y);
+        const shouldApplyFilter = isInverted ? !isInside : isInside;
+        
+        if (cropRegion && shouldApplyFilter && isFilterEnabled) {
           // Generate new random noise for changed pixel
+          const pixel = getRandomPixel();
+          current[i] = pixel[0];
+          current[i + 1] = pixel[1];
+          current[i + 2] = pixel[2];
+          current[i + 3] = pixel[3];
+        } else if (!cropRegion && isFilterEnabled) {
+          // If no region selected, apply filter everywhere
           const pixel = getRandomPixel();
           current[i] = pixel[0];
           current[i + 1] = pixel[1];
@@ -113,7 +130,7 @@ function updateChangedPixels(newImageData) {
     }
   }
 
-  ctx.putImageData(currentImageData, region.x, region.y);
+  ctx.putImageData(currentImageData, 0, 0);
   previousImageData = newImageData;
 }
 
@@ -137,17 +154,16 @@ async function startCapture() {
     const processFrame = () => {
       if (!mediaStream) return;
 
-      const region = cropRegion || { x: 0, y: 0, width: canvas.width, height: canvas.height };
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = region.width;
-      tempCanvas.height = region.height;
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
       const tempCtx = tempCanvas.getContext('2d');
       
       tempCtx.drawImage(video, 
-        region.x, region.y, region.width, region.height,
-        0, 0, region.width, region.height
+        0, 0, canvas.width, canvas.height,
+        0, 0, canvas.width, canvas.height
       );
-      const newImageData = tempCtx.getImageData(0, 0, region.width, region.height);
+      const newImageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
       
       updateChangedPixels(newImageData);
       requestAnimationFrame(processFrame);
@@ -227,6 +243,7 @@ function handleMouseUp(e) {
   if (width > 10 && height > 10) { // Minimum size check
     cropRegion = { x, y, width, height };
     clearRegionButton.style.display = 'block';
+    invertSelectionButton.style.display = 'block';
     selectRegionButton.textContent = 'Change Region';
     
     // Reset the noise in the selected region
@@ -237,7 +254,9 @@ function handleMouseUp(e) {
 function clearCropRegion() {
   cropRegion = null;
   clearRegionButton.style.display = 'none';
+  invertSelectionButton.style.display = 'none';
   selectRegionButton.textContent = 'Select Region';
+  isInverted = false;
   generateNoise();
 }
 
@@ -263,6 +282,17 @@ canvas.addEventListener('mouseup', handleMouseUp);
 toggleFilterButton.addEventListener('click', () => {
   isFilterEnabled = !isFilterEnabled;
   toggleFilterButton.textContent = isFilterEnabled ? 'Disable Filter' : 'Enable Filter';
+  
+  // Regenerate noise if no capture is active
+  if (!mediaStream) {
+    generateNoise(cropRegion);
+  }
+});
+
+// Add invert selection handler
+invertSelectionButton.addEventListener('click', () => {
+  isInverted = !isInverted;
+  invertSelectionButton.textContent = isInverted ? 'Normal Selection' : 'Invert Selection';
   
   // Regenerate noise if no capture is active
   if (!mediaStream) {
