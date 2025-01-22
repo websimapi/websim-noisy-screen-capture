@@ -78,7 +78,6 @@ function updateChangedPixels(newImageData) {
     return;
   }
 
-  const fullRegion = { x: 0, y: 0, width: canvas.width, height: canvas.height };
   const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const current = currentImageData.data;
   const prev = previousImageData.data;
@@ -149,17 +148,15 @@ async function startCapture() {
     const processFrame = () => {
       if (!mediaStream) return;
 
-      const region = cropRegion || { x: 0, y: 0, width: canvas.width, height: canvas.height };
+      // Create temporary canvas at full size
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = region.width;
-      tempCanvas.height = region.height;
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
       const tempCtx = tempCanvas.getContext('2d');
       
-      tempCtx.drawImage(video, 
-        region.x, region.y, region.width, region.height,
-        0, 0, region.width, region.height
-      );
-      const newImageData = tempCtx.getImageData(0, 0, region.width, region.height);
+      // Draw the full video frame
+      tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const newImageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
       
       updateChangedPixels(newImageData);
       requestAnimationFrame(processFrame);
