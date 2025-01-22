@@ -98,15 +98,23 @@ function updateChangedPixels(newImageData) {
 
       // Determine if we should apply the filter to this pixel
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
+
+      // Always update the non-filtered region with video data
+      if (!shouldApplyFilter) {
+        current[i] = next[i];
+        current[i + 1] = next[i + 1];
+        current[i + 2] = next[i + 2];
+        current[i + 3] = next[i + 3];
+        continue;
+      }
       
-      // Calculate the difference between previous and current frame
+      // For the filtered region, only update if change threshold is exceeded
       const diffR = Math.abs(next[i] - prev[i]);
       const diffG = Math.abs(next[i + 1] - prev[i + 1]);
       const diffB = Math.abs(next[i + 2] - prev[i + 2]);
       
-      // Check if the difference exceeds the threshold
       if (diffR > threshold || diffG > threshold || diffB > threshold) {
-        if (isFilterEnabled && shouldApplyFilter) {
+        if (isFilterEnabled) {
           // Generate new random noise for changed pixel
           const pixel = getRandomPixel();
           current[i] = pixel[0];
