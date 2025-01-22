@@ -4,6 +4,8 @@ let startButton = document.getElementById('startCapture');
 let selectRegionButton = document.getElementById('selectRegion');
 let clearRegionButton = document.getElementById('clearRegion');
 let toggleFilterButton = document.getElementById('toggleFilter');
+let sensitivitySlider = document.getElementById('sensitivity');
+let sensitivityValue = document.getElementById('sensitivityValue');
 let mediaStream = null;
 let previousImageData = null;
 
@@ -16,6 +18,13 @@ let isDragging = false;
 
 // Filter state
 let isFilterEnabled = true;
+let sensitivity = 10;
+
+// Update sensitivity display
+sensitivitySlider.addEventListener('input', (e) => {
+  sensitivity = parseInt(e.target.value);
+  sensitivityValue.textContent = `${sensitivity}%`;
+});
 
 // Set canvas size to window size
 function resizeCanvas() {
@@ -73,15 +82,19 @@ function updateChangedPixels(newImageData) {
   const prev = previousImageData.data;
   const next = newImageData.data;
 
+  const threshold = (sensitivity / 100) * 255; // Convert sensitivity percentage to pixel value
+
   for (let y = 0; y < region.height; y++) {
     for (let x = 0; x < region.width; x++) {
       const i = (y * region.width + x) * 4;
       
-      // Check if pixel has changed
-      if (next[i] !== prev[i] || 
-          next[i + 1] !== prev[i + 1] || 
-          next[i + 2] !== prev[i + 2]) {
-        
+      // Calculate the difference between previous and current frame
+      const diffR = Math.abs(next[i] - prev[i]);
+      const diffG = Math.abs(next[i + 1] - prev[i + 1]);
+      const diffB = Math.abs(next[i + 2] - prev[i + 2]);
+      
+      // Check if the difference exceeds the threshold
+      if (diffR > threshold || diffG > threshold || diffB > threshold) {
         if (isFilterEnabled) {
           // Generate new random noise for changed pixel
           const pixel = getRandomPixel();

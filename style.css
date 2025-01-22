@@ -20,6 +20,7 @@ body {
   z-index: 100;
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
 .controls button {
@@ -37,4 +38,28 @@ body {
 
 .cropping #noiseCanvas {
   cursor: crosshair;
+}
+
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+
+.slider-container label {
+  color: black;
+  font-size: 14px;
+}
+
+#sensitivity {
+  width: 100px;
+}
+
+#sensitivityValue {
+  color: black;
+  font-size: 14px;
+  min-width: 45px;
 }
