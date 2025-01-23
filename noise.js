@@ -43,16 +43,16 @@ function getAsciiChar(brightness) {
 
 // Create ASCII art from image data
 function createAsciiArt(imageData, x, y, width, height) {
-  const charWidth = 6;
-  const charHeight = 8;
-  const cols = Math.floor(width / charWidth);
-  const rows = Math.floor(height / charHeight);
-  let asciiArt = '';
+  const blockSize = 8; // Size of each ASCII character block
+  const cols = Math.floor(width / blockSize);
+  const rows = Math.floor(height / blockSize);
+  let asciiArt = new Uint8ClampedArray(width * height * 4);
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      const pixelX = x + (col * charWidth);
-      const pixelY = y + (row * charHeight);
+      // Sample the center pixel of each block
+      const pixelX = x + (col * blockSize) + Math.floor(blockSize / 2);
+      const pixelY = y + (row * blockSize) + Math.floor(blockSize / 2);
       const i = (pixelY * canvas.width + pixelX) * 4;
       
       const r = imageData.data[i];
@@ -60,45 +60,97 @@ function createAsciiArt(imageData, x, y, width, height) {
       const b = imageData.data[i + 2];
       
       const brightness = getBrightness(r, g, b);
-      asciiArt += getAsciiChar(brightness);
+      const color = brightness; // Use brightness as grayscale value
+
+      // Fill the block with the ASCII representation
+      for (let by = 0; by < blockSize && y + (row * blockSize) + by < height; by++) {
+        for (let bx = 0; bx < blockSize && x + (col * blockSize) + bx < width; bx++) {
+          const targetX = x + (col * blockSize) + bx;
+          const targetY = y + (row * blockSize) + by;
+          const targetIndex = (targetY * width + targetX) * 4;
+          
+          asciiArt[targetIndex] = color;     // R
+          asciiArt[targetIndex + 1] = color; // G
+          asciiArt[targetIndex + 2] = color; // B
+          asciiArt[targetIndex + 3] = 255;   // A
+        }
+      }
     }
-    asciiArt += '\n';
   }
 
   return asciiArt;
 }
 
-// Update ASCII display
-function updateAsciiDisplay(imageData, region) {
-  if (currentFilterType !== 'ascii') {
-    asciiOutput.style.display = 'none';
+// Compare pixels and update only changed ones
+function updateChangedPixels(newImageData) {
+  if (!previousImageData) {
+    previousImageData = newImageData;
     return;
   }
 
-  asciiOutput.style.display = 'block';
-  const x = region ? region.x : 0;
-  const y = region ? region.y : 0;
-  const width = region ? region.width : canvas.width;
-  const height = region ? region.height : canvas.height;
-  
-  const ascii = createAsciiArt(imageData, x, y, width, height);
-  asciiOutput.style.left = `${x}px`;
-  asciiOutput.style.top = `${y}px`;
-  asciiOutput.textContent = ascii;
-}
+  const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const current = currentImageData.data;
+  const prev = previousImageData.data;
+  const next = newImageData.data;
 
-// Set canvas size to window size
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  if (!mediaStream) {
-    generateNoise();
+  const threshold = (sensitivity / 100) * 255;
+
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4;
+      
+      const isInsideRegion = cropRegion && 
+        x >= cropRegion.x && 
+        x < cropRegion.x + cropRegion.width && 
+        y >= cropRegion.y && 
+        y < cropRegion.y + cropRegion.height;
+
+      const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
+
+      const diffR = Math.abs(next[i] - prev[i]);
+      const diffG = Math.abs(next[i + 1] - prev[i + 1]);
+      const diffB = Math.abs(next[i + 2] - prev[i + 2]);
+      const pixelChanged = diffR > threshold || diffG > threshold || diffB > threshold;
+
+      if (shouldApplyFilter && isFilterEnabled) {
+        if (currentFilterType === 'noise' && pixelChanged) {
+          const pixel = getRandomPixel();
+          current[i] = pixel[0];
+          current[i + 1] = pixel[1];
+          current[i + 2] = pixel[2];
+          current[i + 3] = pixel[3];
+        } else if (currentFilterType === 'ascii') {
+          // Create ASCII art for the filtered region
+          const region = {
+            x: filterInsideRegion ? cropRegion.x : 0,
+            y: filterInsideRegion ? cropRegion.y : 0,
+            width: filterInsideRegion ? cropRegion.width : canvas.width,
+            height: filterInsideRegion ? cropRegion.height : canvas.height
+          };
+          
+          if (x >= region.x && x < region.x + region.width &&
+              y >= region.y && y < region.y + region.height) {
+            const asciiData = createAsciiArt(newImageData, region.x, region.y, region.width, region.height);
+            const asciiIndex = ((y - region.y) * region.width + (x - region.x)) * 4;
+            current[i] = asciiData[asciiIndex];
+            current[i + 1] = asciiData[asciiIndex + 1];
+            current[i + 2] = asciiData[asciiIndex + 2];
+            current[i + 3] = asciiData[asciiIndex + 3];
+          }
+        }
+      } else if (pixelChanged || shouldApplyFilter !== filterInsideRegion) {
+        // Copy video data for non-filtered regions or when pixels change
+        current[i] = next[i];
+        current[i + 1] = next[i + 1];
+        current[i + 2] = next[i + 2];
+        current[i + 3] = next[i + 3];
+      }
+    }
   }
-}
 
-// Initialize canvas size
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+  ctx.putImageData(currentImageData, 0, 0);
+  previousImageData = newImageData;
+}
 
 // Generate random noise for a pixel
 function getRandomPixel() {
@@ -130,90 +182,18 @@ function generateNoise(region = null) {
 // Initial noise generation
 generateNoise();
 
-// Compare pixels and update only changed ones
-function updateChangedPixels(newImageData) {
-  if (!previousImageData) {
-    previousImageData = newImageData;
-    return;
+// Set canvas size to window size
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  if (!mediaStream) {
+    generateNoise();
   }
-
-  const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const current = currentImageData.data;
-  const prev = previousImageData.data;
-  const next = newImageData.data;
-
-  const threshold = (sensitivity / 100) * 255;
-
-  // Clear ASCII output if not using ASCII filter
-  if (currentFilterType !== 'ascii') {
-    asciiOutput.style.display = 'none';
-  }
-
-  for (let y = 0; y < canvas.height; y++) {
-    for (let x = 0; x < canvas.width; x++) {
-      const i = (y * canvas.width + x) * 4;
-      
-      const isInsideRegion = cropRegion && 
-        x >= cropRegion.x && 
-        x < cropRegion.x + cropRegion.width && 
-        y >= cropRegion.y && 
-        y < cropRegion.y + cropRegion.height;
-
-      const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
-
-      // Always update the non-filtered region with video data
-      if (!shouldApplyFilter) {
-        current[i] = next[i];
-        current[i + 1] = next[i + 1];
-        current[i + 2] = next[i + 2];
-        current[i + 3] = next[i + 3];
-        continue;
-      }
-      
-      const diffR = Math.abs(next[i] - prev[i]);
-      const diffG = Math.abs(next[i + 1] - prev[i + 1]);
-      const diffB = Math.abs(next[i + 2] - prev[i + 2]);
-      
-      if (diffR > threshold || diffG > threshold || diffB > threshold) {
-        if (isFilterEnabled) {
-          if (currentFilterType === 'noise') {
-            const pixel = getRandomPixel();
-            current[i] = pixel[0];
-            current[i + 1] = pixel[1];
-            current[i + 2] = pixel[2];
-            current[i + 3] = pixel[3];
-          } else {
-            // For ASCII, we'll just copy the video data and handle ASCII rendering separately
-            current[i] = next[i];
-            current[i + 1] = next[i + 1];
-            current[i + 2] = next[i + 2];
-            current[i + 3] = next[i + 3];
-          }
-        } else {
-          current[i] = next[i];
-          current[i + 1] = next[i + 1];
-          current[i + 2] = next[i + 2];
-          current[i + 3] = next[i + 3];
-        }
-      }
-    }
-  }
-
-  ctx.putImageData(currentImageData, 0, 0);
-  
-  // Update ASCII display if needed
-  if (currentFilterType === 'ascii' && isFilterEnabled) {
-    const region = filterInsideRegion ? cropRegion : {
-      x: 0,
-      y: 0,
-      width: canvas.width,
-      height: canvas.height
-    };
-    updateAsciiDisplay(currentImageData, region);
-  }
-
-  previousImageData = newImageData;
 }
+
+// Initialize canvas size
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
 // Handle screen capture
 async function startCapture() {
