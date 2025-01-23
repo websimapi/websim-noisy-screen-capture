@@ -83,7 +83,7 @@ function drawAsciiPixel(ctx, x, y, char) {
   ctx.fillText(char, x, y);
 }
 
-// Compare pixels and update only changed ones
+// Compare pixels and update only changed pixels
 function updateChangedPixels(newImageData) {
   if (!previousImageData) {
     previousImageData = newImageData;
@@ -97,10 +97,33 @@ function updateChangedPixels(newImageData) {
 
   const threshold = (sensitivity / 100) * 255;
   
-  // Clear canvas for ASCII rendering
+  // Create a temporary canvas for ASCII rendering
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  
+  // Copy current frame to temp canvas
+  tempCtx.putImageData(currentImageData, 0, 0);
+  
+  // Clear only the ASCII region
   if (useAsciiFilter) {
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (filterInsideRegion && !cropRegion) {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (cropRegion) {
+      ctx.fillStyle = 'black';
+      if (filterInsideRegion) {
+        // Clear outside region for ASCII
+        ctx.fillRect(0, 0, canvas.width, cropRegion.y); // top
+        ctx.fillRect(0, cropRegion.y + cropRegion.height, canvas.width, canvas.height - (cropRegion.y + cropRegion.height)); // bottom
+        ctx.fillRect(0, cropRegion.y, cropRegion.x, cropRegion.height); // left
+        ctx.fillRect(cropRegion.x + cropRegion.width, cropRegion.y, canvas.width - (cropRegion.x + cropRegion.width), cropRegion.height); // right
+      } else {
+        // Clear inside region for ASCII
+        ctx.fillRect(cropRegion.x, cropRegion.y, cropRegion.width, cropRegion.height);
+      }
+    }
   }
 
   for (let y = 0; y < canvas.height; y += 8) {
@@ -165,7 +188,37 @@ function updateChangedPixels(newImageData) {
 
   if (!useAsciiFilter) {
     ctx.putImageData(currentImageData, 0, 0);
+  } else {
+    // Only update the non-ASCII regions with the current image data
+    const asciiRegion = cropRegion ? {
+      x: filterInsideRegion ? cropRegion.x : 0,
+      y: filterInsideRegion ? cropRegion.y : 0,
+      width: filterInsideRegion ? cropRegion.width : canvas.width,
+      height: filterInsideRegion ? cropRegion.height : canvas.height
+    } : {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height
+    };
+    
+    const nonAsciiRegion = {
+      x: filterInsideRegion ? 0 : cropRegion.x,
+      y: filterInsideRegion ? 0 : cropRegion.y,
+      width: filterInsideRegion ? canvas.width : cropRegion.width,
+      height: filterInsideRegion ? canvas.height : cropRegion.height
+    };
+    
+    const regionData = tempCtx.getImageData(
+      nonAsciiRegion.x,
+      nonAsciiRegion.y,
+      nonAsciiRegion.width,
+      nonAsciiRegion.height
+    );
+    
+    ctx.putImageData(regionData, nonAsciiRegion.x, nonAsciiRegion.y);
   }
+  
   previousImageData = newImageData;
 }
 
