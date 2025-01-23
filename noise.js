@@ -36,6 +36,58 @@ let asciiColorPicker = document.getElementById('asciiColor');
 let asciiSettings = document.querySelectorAll('.ascii-settings');
 let asciiColorToggle = document.getElementById('asciiColorToggle');
 
+// Rainbow effect settings
+let useRainbowEffect = false;
+let rainbowHue = 0;
+const RAINBOW_SPEED = 2; // Hue change per frame
+
+// Generate random noise for a pixel with optional rainbow effect
+function getRandomPixel() {
+  const value = Math.random() > 0.5 ? 255 : 0;
+  
+  if (useRainbowEffect) {
+    if (value === 255) {
+      // Convert HSL to RGB for white pixels
+      const hue = (rainbowHue + Math.random() * 30) % 360; // Add some random variation
+      const [r, g, b] = hslToRgb(hue / 360, 1, 0.5);
+      return [r, g, b, 255];
+    } else {
+      // Dark complementary color for black pixels
+      const hue = ((rainbowHue + 180) + Math.random() * 30) % 360;
+      const [r, g, b] = hslToRgb(hue / 360, 1, 0.2);
+      return [r, g, b, 255];
+    }
+  }
+  
+  return [value, value, value, 255];
+}
+
+// HSL to RGB conversion function
+function hslToRgb(h, s, l) {
+  let r, g, b;
+
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
 // Update sensitivity display
 sensitivitySlider.addEventListener('input', (e) => {
   sensitivity = parseInt(e.target.value);
@@ -66,12 +118,6 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-// Generate random noise for a pixel
-function getRandomPixel() {
-  const value = Math.random() > 0.5 ? 255 : 0;
-  return [value, value, value, 255]; // RGBA
-}
-
 // Fill canvas with random noise
 function generateNoise(region = null) {
   const imageData = ctx.getImageData(
@@ -98,8 +144,13 @@ function getAsciiChar(brightness) {
   return asciiChars[index];
 }
 
+// Update ASCII drawing to support rainbow effect
 function drawAsciiPixel(ctx, x, y, char, originalColor) {
-  if (useCustomAsciiColor) {
+  if (useRainbowEffect) {
+    const hue = (rainbowHue + Math.random() * 30) % 360;
+    const [r, g, b] = hslToRgb(hue / 360, 1, 0.5);
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+  } else if (useCustomAsciiColor) {
     ctx.fillStyle = asciiColor;
   } else {
     ctx.fillStyle = `rgb(${originalColor[0]}, ${originalColor[1]}, ${originalColor[2]})`;
@@ -256,6 +307,10 @@ async function startCapture() {
     // Process video frames
     const processFrame = () => {
       if (!mediaStream) return;
+
+      if (useRainbowEffect) {
+        rainbowHue = (rainbowHue + RAINBOW_SPEED) % 360;
+      }
 
       // Create temporary canvas at full size
       const tempCanvas = document.createElement('canvas');
@@ -425,6 +480,18 @@ asciiColorToggle.addEventListener('click', () => {
   useCustomAsciiColor = !useCustomAsciiColor;
   asciiColorToggle.textContent = useCustomAsciiColor ? 'Use Original Colors' : 'Use Custom Color';
   asciiColorPicker.style.display = useCustomAsciiColor ? 'block' : 'none';
+  
+  // Regenerate display if no capture is active
+  if (!mediaStream) {
+    generateNoise();
+  }
+});
+
+// Add rainbow effect toggle button handler
+const toggleRainbowButton = document.getElementById('toggleRainbow');
+toggleRainbowButton.addEventListener('click', () => {
+  useRainbowEffect = !useRainbowEffect;
+  toggleRainbowButton.textContent = useRainbowEffect ? 'Disable Rainbow' : 'Enable Rainbow';
   
   // Regenerate display if no capture is active
   if (!mediaStream) {
