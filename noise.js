@@ -97,21 +97,13 @@ function updateChangedPixels(newImageData) {
 
   const threshold = (sensitivity / 100) * 255;
   
-  // Clear canvas but preserve the filtered region
+  // Clear canvas for ASCII redraw
   if (useAsciiFilter) {
-    if (cropRegion && filterInsideRegion) {
-      // Only clear outside the crop region
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, canvas.width, cropRegion.y); // Top
-      ctx.fillRect(0, cropRegion.y + cropRegion.height, canvas.width, canvas.height - (cropRegion.y + cropRegion.height)); // Bottom
-      ctx.fillRect(0, cropRegion.y, cropRegion.x, cropRegion.height); // Left
-      ctx.fillRect(cropRegion.x + cropRegion.width, cropRegion.y, canvas.width - (cropRegion.x + cropRegion.width), cropRegion.height); // Right
-    } else {
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
+  // First pass: Process noise filter region based on original video data
   for (let y = 0; y < canvas.height; y += 8) {
     for (let x = 0; x < canvas.width; x += 8) {
       const i = (y * canvas.width + x) * 4;
@@ -123,30 +115,15 @@ function updateChangedPixels(newImageData) {
         y < cropRegion.y + cropRegion.height;
 
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
-      const shouldApplyAscii = useAsciiFilter && (filterInsideRegion ? !isInsideRegion : isInsideRegion);
 
-      // Skip processing if in ASCII region but inside filter region
-      if (shouldApplyFilter && shouldApplyAscii) {
-        continue;
-      }
-
-      // Handle ASCII region
-      if (shouldApplyAscii) {
-        // Calculate brightness for ASCII
-        const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
-        const asciiChar = getAsciiChar(brightness);
-        drawAsciiPixel(ctx, x, y, asciiChar);
-        continue;
-      }
-
-      // Handle the filtered region
+      // Process noise filter region first
       if (shouldApplyFilter) {
         const diffR = Math.abs(next[i] - prev[i]);
         const diffG = Math.abs(next[i + 1] - prev[i + 1]);
         const diffB = Math.abs(next[i + 2] - prev[i + 2]);
         
         if (diffR > threshold || diffG > threshold || diffB > threshold) {
-          // Fill 8x8 block with noise if filter is enabled
+          // Fill 8x8 block with noise
           for (let by = 0; by < 8; by++) {
             for (let bx = 0; bx < 8; bx++) {
               const bi = ((y + by) * canvas.width + (x + bx)) * 4;
@@ -160,16 +137,41 @@ function updateChangedPixels(newImageData) {
             }
           }
         }
-      } else if (!shouldApplyAscii) {
-        // Non-filtered region shows video data
-        for (let by = 0; by < 8; by++) {
-          for (let bx = 0; bx < 8; bx++) {
-            const bi = ((y + by) * canvas.width + (x + bx)) * 4;
-            if (bi < current.length) {
-              current[bi] = next[bi];
-              current[bi + 1] = next[bi + 1];
-              current[bi + 2] = next[bi + 2];
-              current[bi + 3] = next[bi + 3];
+      }
+    }
+  }
+
+  // Second pass: Process non-filtered regions (either ASCII or video)
+  for (let y = 0; y < canvas.height; y += 8) {
+    for (let x = 0; x < canvas.width; x += 8) {
+      const i = (y * canvas.width + x) * 4;
+      
+      const isInsideRegion = cropRegion && 
+        x >= cropRegion.x && 
+        x < cropRegion.x + cropRegion.width && 
+        y >= cropRegion.y && 
+        y < cropRegion.y + cropRegion.height;
+
+      const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
+      
+      // Handle non-filtered regions
+      if (!shouldApplyFilter) {
+        if (useAsciiFilter) {
+          // Calculate brightness for ASCII
+          const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
+          const asciiChar = getAsciiChar(brightness);
+          drawAsciiPixel(ctx, x, y, asciiChar);
+        } else {
+          // Show original video data
+          for (let by = 0; by < 8; by++) {
+            for (let bx = 0; bx < 8; bx++) {
+              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+              if (bi < current.length) {
+                current[bi] = next[bi];
+                current[bi + 1] = next[bi + 1];
+                current[bi + 2] = next[bi + 2];
+                current[bi + 3] = next[bi + 3];
+              }
             }
           }
         }
@@ -177,23 +179,38 @@ function updateChangedPixels(newImageData) {
     }
   }
 
-  // Only update the non-ASCII regions with the image data
+  // Update the canvas with the final result
   if (!useAsciiFilter) {
     ctx.putImageData(currentImageData, 0, 0);
   } else {
-    // Update only the filtered region with image data
+    // For ASCII mode, update only the noise filter region with image data
     if (cropRegion) {
+      const filterRegion = filterInsideRegion ? cropRegion : {
+        x: 0,
+        y: 0,
+        width: canvas.width,
+        height: canvas.height
+      };
+      
       const regionData = ctx.getImageData(
-        cropRegion.x,
-        cropRegion.y,
-        cropRegion.width,
-        cropRegion.height
+        filterRegion.x,
+        filterRegion.y,
+        filterRegion.width,
+        filterRegion.height
       );
-      const regionPixels = new Uint8ClampedArray(currentImageData.data.buffer, 
-        (cropRegion.y * canvas.width + cropRegion.x) * 4,
-        cropRegion.width * cropRegion.height * 4);
-      regionData.data.set(regionPixels);
-      ctx.putImageData(regionData, cropRegion.x, cropRegion.y);
+      
+      for (let y = 0; y < filterRegion.height; y++) {
+        for (let x = 0; x < filterRegion.width; x++) {
+          const sourceIndex = ((filterRegion.y + y) * canvas.width + (filterRegion.x + x)) * 4;
+          const targetIndex = (y * filterRegion.width + x) * 4;
+          regionData.data[targetIndex] = current[sourceIndex];
+          regionData.data[targetIndex + 1] = current[sourceIndex + 1];
+          regionData.data[targetIndex + 2] = current[sourceIndex + 2];
+          regionData.data[targetIndex + 3] = current[sourceIndex + 3];
+        }
+      }
+      
+      ctx.putImageData(regionData, filterRegion.x, filterRegion.y);
     }
   }
   
