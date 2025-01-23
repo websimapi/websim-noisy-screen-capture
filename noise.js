@@ -9,6 +9,8 @@ let sensitivitySlider = document.getElementById('sensitivity');
 let sensitivityValue = document.getElementById('sensitivityValue');
 let toggleMenuButton = document.getElementById('toggleMenu');
 let controlsPanel = document.querySelector('.controls');
+let filterTypeSelect = document.getElementById('filterType');
+let asciiOutput = document.getElementById('asciiOutput');
 let mediaStream = null;
 let previousImageData = null;
 
@@ -23,14 +25,67 @@ let isDragging = false;
 let isFilterEnabled = true;
 let filterInsideRegion = true;
 let sensitivity = 10;
-let useAsciiFilter = false;
-const asciiChars = ['@', '#', '8', '&', 'o', ':', '*', '.', ' '];
+let currentFilterType = 'noise';
 
-// Update sensitivity display
-sensitivitySlider.addEventListener('input', (e) => {
-  sensitivity = parseInt(e.target.value);
-  sensitivityValue.textContent = `${sensitivity}%`;
-});
+// ASCII characters from darkest to lightest
+const asciiChars = '@%#*+=-:. ';
+
+// Convert RGB to brightness value (0-255)
+function getBrightness(r, g, b) {
+  return Math.floor((r + g + b) / 3);
+}
+
+// Convert brightness to ASCII character
+function getAsciiChar(brightness) {
+  const charIndex = Math.floor(brightness / 256 * asciiChars.length);
+  return asciiChars[charIndex];
+}
+
+// Create ASCII art from image data
+function createAsciiArt(imageData, x, y, width, height) {
+  const charWidth = 6;
+  const charHeight = 8;
+  const cols = Math.floor(width / charWidth);
+  const rows = Math.floor(height / charHeight);
+  let asciiArt = '';
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const pixelX = x + (col * charWidth);
+      const pixelY = y + (row * charHeight);
+      const i = (pixelY * canvas.width + pixelX) * 4;
+      
+      const r = imageData.data[i];
+      const g = imageData.data[i + 1];
+      const b = imageData.data[i + 2];
+      
+      const brightness = getBrightness(r, g, b);
+      asciiArt += getAsciiChar(brightness);
+    }
+    asciiArt += '\n';
+  }
+
+  return asciiArt;
+}
+
+// Update ASCII display
+function updateAsciiDisplay(imageData, region) {
+  if (currentFilterType !== 'ascii') {
+    asciiOutput.style.display = 'none';
+    return;
+  }
+
+  asciiOutput.style.display = 'block';
+  const x = region ? region.x : 0;
+  const y = region ? region.y : 0;
+  const width = region ? region.width : canvas.width;
+  const height = region ? region.height : canvas.height;
+  
+  const ascii = createAsciiArt(imageData, x, y, width, height);
+  asciiOutput.style.left = `${x}px`;
+  asciiOutput.style.top = `${y}px`;
+  asciiOutput.textContent = ascii;
+}
 
 // Set canvas size to window size
 function resizeCanvas() {
@@ -72,16 +127,8 @@ function generateNoise(region = null) {
   ctx.putImageData(imageData, region ? region.x : 0, region ? region.y : 0);
 }
 
-function getAsciiChar(brightness) {
-  const index = Math.floor(brightness / 255 * (asciiChars.length - 1));
-  return asciiChars[index];
-}
-
-function drawAsciiPixel(ctx, x, y, char) {
-  ctx.fillStyle = 'white';
-  ctx.font = '8px monospace';
-  ctx.fillText(char, x, y);
-}
+// Initial noise generation
+generateNoise();
 
 // Compare pixels and update only changed ones
 function updateChangedPixels(newImageData) {
@@ -96,15 +143,14 @@ function updateChangedPixels(newImageData) {
   const next = newImageData.data;
 
   const threshold = (sensitivity / 100) * 255;
-  
-  // Clear canvas for ASCII rendering
-  if (useAsciiFilter) {
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Clear ASCII output if not using ASCII filter
+  if (currentFilterType !== 'ascii') {
+    asciiOutput.style.display = 'none';
   }
 
-  for (let y = 0; y < canvas.height; y += 8) {
-    for (let x = 0; x < canvas.width; x += 8) {
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
       const i = (y * canvas.width + x) * 4;
       
       const isInsideRegion = cropRegion && 
@@ -115,71 +161,57 @@ function updateChangedPixels(newImageData) {
 
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
 
-      // Handle the non-filtered region
+      // Always update the non-filtered region with video data
       if (!shouldApplyFilter) {
-        if (useAsciiFilter) {
-          // Calculate brightness for ASCII
-          const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
-          const asciiChar = getAsciiChar(brightness);
-          drawAsciiPixel(ctx, x, y, asciiChar);
-        } else {
-          // Fill 8x8 block with video data
-          for (let by = 0; by < 8; by++) {
-            for (let bx = 0; bx < 8; bx++) {
-              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
-              if (bi < current.length) {
-                current[bi] = next[bi];
-                current[bi + 1] = next[bi + 1];
-                current[bi + 2] = next[bi + 2];
-                current[bi + 3] = next[bi + 3];
-              }
-            }
-          }
-        }
+        current[i] = next[i];
+        current[i + 1] = next[i + 1];
+        current[i + 2] = next[i + 2];
+        current[i + 3] = next[i + 3];
         continue;
       }
       
-      // For the filtered region, only update if change threshold is exceeded
       const diffR = Math.abs(next[i] - prev[i]);
       const diffG = Math.abs(next[i + 1] - prev[i + 1]);
       const diffB = Math.abs(next[i + 2] - prev[i + 2]);
       
       if (diffR > threshold || diffG > threshold || diffB > threshold) {
         if (isFilterEnabled) {
-          // Fill 8x8 block with noise
-          for (let by = 0; by < 8; by++) {
-            for (let bx = 0; bx < 8; bx++) {
-              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
-              if (bi < current.length) {
-                const pixel = getRandomPixel();
-                current[bi] = pixel[0];
-                current[bi + 1] = pixel[1];
-                current[bi + 2] = pixel[2];
-                current[bi + 3] = pixel[3];
-              }
-            }
+          if (currentFilterType === 'noise') {
+            const pixel = getRandomPixel();
+            current[i] = pixel[0];
+            current[i + 1] = pixel[1];
+            current[i + 2] = pixel[2];
+            current[i + 3] = pixel[3];
+          } else {
+            // For ASCII, we'll just copy the video data and handle ASCII rendering separately
+            current[i] = next[i];
+            current[i + 1] = next[i + 1];
+            current[i + 2] = next[i + 2];
+            current[i + 3] = next[i + 3];
           }
         } else {
-          // Fill 8x8 block with video data
-          for (let by = 0; by < 8; by++) {
-            for (let bx = 0; bx < 8; bx++) {
-              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
-              if (bi < current.length) {
-                current[bi] = next[bi];
-                current[bi + 1] = next[bi + 1];
-                current[bi + 2] = next[bi + 2];
-                current[bi + 3] = next[bi + 3];
-              }
-            }
-          }
+          current[i] = next[i];
+          current[i + 1] = next[i + 1];
+          current[i + 2] = next[i + 2];
+          current[i + 3] = next[i + 3];
         }
       }
     }
   }
 
-  if (!useAsciiFilter) {
-    ctx.putImageData(currentImageData, 0, 0);
+  ctx.putImageData(currentImageData, 0, 0);
+  
+  // Update ASCII display if needed
+  if (currentFilterType === 'ascii' && isFilterEnabled) {
+    const region = filterInsideRegion ? cropRegion : {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height
+    };
+    updateAsciiDisplay(currentImageData, region);
   }
+
   previousImageData = newImageData;
 }
 
@@ -350,14 +382,11 @@ toggleMenuButton.addEventListener('click', () => {
   controlsPanel.classList.toggle('hidden');
 });
 
-const toggleAsciiButton = document.getElementById('toggleAscii');
-toggleAsciiButton.addEventListener('click', () => {
-  useAsciiFilter = !useAsciiFilter;
-  toggleAsciiButton.textContent = useAsciiFilter ? 'Disable ASCII' : 'Enable ASCII';
-  
-  // Regenerate display if no capture is active
+// Add filter type change handler
+filterTypeSelect.addEventListener('change', (e) => {
+  currentFilterType = e.target.value;
   if (!mediaStream) {
-    generateNoise();
+    generateNoise(cropRegion);
   }
 });
 
@@ -369,5 +398,8 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// Initial noise generation
-generateNoise();
+// Update sensitivity display
+sensitivitySlider.addEventListener('input', (e) => {
+  sensitivity = parseInt(e.target.value);
+  sensitivityValue.textContent = `${sensitivity}%`;
+});
