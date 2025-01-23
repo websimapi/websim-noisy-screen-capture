@@ -23,6 +23,8 @@ let isDragging = false;
 let isFilterEnabled = true;
 let filterInsideRegion = true;
 let sensitivity = 10;
+let useAsciiFilter = false;
+const asciiChars = ['@', '#', '8', '&', 'o', ':', '*', '.', ' '];
 
 // Update sensitivity display
 sensitivitySlider.addEventListener('input', (e) => {
@@ -70,8 +72,16 @@ function generateNoise(region = null) {
   ctx.putImageData(imageData, region ? region.x : 0, region ? region.y : 0);
 }
 
-// Initial noise generation
-generateNoise();
+function getAsciiChar(brightness) {
+  const index = Math.floor(brightness / 255 * (asciiChars.length - 1));
+  return asciiChars[index];
+}
+
+function drawAsciiPixel(ctx, x, y, char) {
+  ctx.fillStyle = 'white';
+  ctx.font = '8px monospace';
+  ctx.fillText(char, x, y);
+}
 
 // Compare pixels and update only changed ones
 function updateChangedPixels(newImageData) {
@@ -86,27 +96,46 @@ function updateChangedPixels(newImageData) {
   const next = newImageData.data;
 
   const threshold = (sensitivity / 100) * 255;
+  
+  // Clear canvas for ASCII rendering
+  if (useAsciiFilter) {
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
-  for (let y = 0; y < canvas.height; y++) {
-    for (let x = 0; x < canvas.width; x++) {
+  for (let y = 0; y < canvas.height; y += 8) {
+    for (let x = 0; x < canvas.width; x += 8) {
       const i = (y * canvas.width + x) * 4;
       
-      // Check if current pixel is inside the crop region
       const isInsideRegion = cropRegion && 
         x >= cropRegion.x && 
         x < cropRegion.x + cropRegion.width && 
         y >= cropRegion.y && 
         y < cropRegion.y + cropRegion.height;
 
-      // Determine if we should apply the filter to this pixel
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
 
-      // Always update the non-filtered region with video data
+      // Handle the non-filtered region
       if (!shouldApplyFilter) {
-        current[i] = next[i];
-        current[i + 1] = next[i + 1];
-        current[i + 2] = next[i + 2];
-        current[i + 3] = next[i + 3];
+        if (useAsciiFilter) {
+          // Calculate brightness for ASCII
+          const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
+          const asciiChar = getAsciiChar(brightness);
+          drawAsciiPixel(ctx, x, y, asciiChar);
+        } else {
+          // Fill 8x8 block with video data
+          for (let by = 0; by < 8; by++) {
+            for (let bx = 0; bx < 8; bx++) {
+              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+              if (bi < current.length) {
+                current[bi] = next[bi];
+                current[bi + 1] = next[bi + 1];
+                current[bi + 2] = next[bi + 2];
+                current[bi + 3] = next[bi + 3];
+              }
+            }
+          }
+        }
         continue;
       }
       
@@ -117,24 +146,40 @@ function updateChangedPixels(newImageData) {
       
       if (diffR > threshold || diffG > threshold || diffB > threshold) {
         if (isFilterEnabled) {
-          // Generate new random noise for changed pixel
-          const pixel = getRandomPixel();
-          current[i] = pixel[0];
-          current[i + 1] = pixel[1];
-          current[i + 2] = pixel[2];
-          current[i + 3] = pixel[3];
+          // Fill 8x8 block with noise
+          for (let by = 0; by < 8; by++) {
+            for (let bx = 0; bx < 8; bx++) {
+              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+              if (bi < current.length) {
+                const pixel = getRandomPixel();
+                current[bi] = pixel[0];
+                current[bi + 1] = pixel[1];
+                current[bi + 2] = pixel[2];
+                current[bi + 3] = pixel[3];
+              }
+            }
+          }
         } else {
-          // Use actual video pixel
-          current[i] = next[i];
-          current[i + 1] = next[i + 1];
-          current[i + 2] = next[i + 2];
-          current[i + 3] = next[i + 3];
+          // Fill 8x8 block with video data
+          for (let by = 0; by < 8; by++) {
+            for (let bx = 0; bx < 8; bx++) {
+              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+              if (bi < current.length) {
+                current[bi] = next[bi];
+                current[bi + 1] = next[bi + 1];
+                current[bi + 2] = next[bi + 2];
+                current[bi + 3] = next[bi + 3];
+              }
+            }
+          }
         }
       }
     }
   }
 
-  ctx.putImageData(currentImageData, 0, 0);
+  if (!useAsciiFilter) {
+    ctx.putImageData(currentImageData, 0, 0);
+  }
   previousImageData = newImageData;
 }
 
@@ -305,6 +350,17 @@ toggleMenuButton.addEventListener('click', () => {
   controlsPanel.classList.toggle('hidden');
 });
 
+const toggleAsciiButton = document.getElementById('toggleAscii');
+toggleAsciiButton.addEventListener('click', () => {
+  useAsciiFilter = !useAsciiFilter;
+  toggleAsciiButton.textContent = useAsciiFilter ? 'Disable ASCII' : 'Enable ASCII';
+  
+  // Regenerate display if no capture is active
+  if (!mediaStream) {
+    generateNoise();
+  }
+});
+
 // Handle visibility change
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && mediaStream) {
@@ -312,3 +368,6 @@ document.addEventListener('visibilitychange', () => {
     startButton.textContent = 'Start Screen Capture';
   }
 });
+
+// Initial noise generation
+generateNoise();

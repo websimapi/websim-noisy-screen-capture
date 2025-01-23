@@ -106,3 +106,12 @@ body {
 #toggleRegionMode:hover {
   background: #45a049;
 }
+
+#toggleAscii {
+  background: #9c27b0;
+  color: white;
+}
+
+#toggleAscii:hover {
+  background: #7b1fa2;
+}
