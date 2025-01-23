@@ -28,11 +28,13 @@ const asciiChars = ['@', '#', '8', '&', 'o', ':', '*', '.', ' '];
 
 // ASCII settings
 let asciiDetail = 8;
+let useCustomAsciiColor = true;
 let asciiColor = '#ffffff';
 let asciiDetailSlider = document.getElementById('asciiDetail');
 let asciiDetailValue = document.getElementById('asciiDetailValue');
 let asciiColorPicker = document.getElementById('asciiColor');
 let asciiSettings = document.querySelectorAll('.ascii-settings');
+let asciiColorToggle = document.getElementById('asciiColorToggle');
 
 // Update sensitivity display
 sensitivitySlider.addEventListener('input', (e) => {
@@ -96,8 +98,12 @@ function getAsciiChar(brightness) {
   return asciiChars[index];
 }
 
-function drawAsciiPixel(ctx, x, y, char) {
-  ctx.fillStyle = asciiColor;
+function drawAsciiPixel(ctx, x, y, char, originalColor) {
+  if (useCustomAsciiColor) {
+    ctx.fillStyle = asciiColor;
+  } else {
+    ctx.fillStyle = `rgb(${originalColor[0]}, ${originalColor[1]}, ${originalColor[2]})`;
+  }
   ctx.font = `${asciiDetail}px monospace`;
   ctx.fillText(char, x, y);
 }
@@ -174,7 +180,8 @@ function updateChangedPixels(newImageData) {
         if (useAsciiFilter) {
           const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
           const asciiChar = getAsciiChar(brightness);
-          drawAsciiPixel(ctx, x, y, asciiChar);
+          const originalColor = [next[i], next[i + 1], next[i + 2]];
+          drawAsciiPixel(ctx, x, y, asciiChar, originalColor);
         } else {
           for (let by = 0; by < asciiDetail; by++) {
             for (let bx = 0; bx < asciiDetail; bx++) {
@@ -406,6 +413,18 @@ toggleAsciiButton.addEventListener('click', () => {
   asciiSettings.forEach(setting => {
     setting.classList.toggle('show', useAsciiFilter);
   });
+  
+  // Regenerate display if no capture is active
+  if (!mediaStream) {
+    generateNoise();
+  }
+});
+
+// Add ASCII color toggle handler
+asciiColorToggle.addEventListener('click', () => {
+  useCustomAsciiColor = !useCustomAsciiColor;
+  asciiColorToggle.textContent = useCustomAsciiColor ? 'Use Original Colors' : 'Use Custom Color';
+  asciiColorPicker.style.display = useCustomAsciiColor ? 'block' : 'none';
   
   // Regenerate display if no capture is active
   if (!mediaStream) {
