@@ -83,7 +83,7 @@ function drawAsciiPixel(ctx, x, y, char) {
   ctx.fillText(char, x, y);
 }
 
-// Compare pixels and update only changed ones
+// Compare pixels and update only changed pixels
 function updateChangedPixels(newImageData) {
   if (!previousImageData) {
     previousImageData = newImageData;
@@ -97,31 +97,6 @@ function updateChangedPixels(newImageData) {
 
   const threshold = (sensitivity / 100) * 255;
 
-  // Clear canvas only in ASCII regions
-  if (useAsciiFilter) {
-    if (cropRegion) {
-      if (filterInsideRegion) {
-        // Clear outside region for ASCII
-        ctx.fillStyle = 'black';
-        // Clear top
-        ctx.fillRect(0, 0, canvas.width, cropRegion.y);
-        // Clear bottom
-        ctx.fillRect(0, cropRegion.y + cropRegion.height, canvas.width, canvas.height - (cropRegion.y + cropRegion.height));
-        // Clear left
-        ctx.fillRect(0, cropRegion.y, cropRegion.x, cropRegion.height);
-        // Clear right
-        ctx.fillRect(cropRegion.x + cropRegion.width, cropRegion.y, canvas.width - (cropRegion.x + cropRegion.width), cropRegion.height);
-      } else {
-        // Clear inside region for ASCII
-        ctx.fillStyle = 'black';
-        ctx.fillRect(cropRegion.x, cropRegion.y, cropRegion.width, cropRegion.height);
-      }
-    } else {
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-  }
-
   for (let y = 0; y < canvas.height; y += 8) {
     for (let x = 0; x < canvas.width; x += 8) {
       const i = (y * canvas.width + x) * 4;
@@ -133,25 +108,34 @@ function updateChangedPixels(newImageData) {
         y < cropRegion.y + cropRegion.height;
 
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
-      const shouldApplyAscii = useAsciiFilter && (filterInsideRegion ? !isInsideRegion : isInsideRegion);
+      const shouldApplyAscii = useAsciiFilter && shouldApplyFilter;
 
       // Handle ASCII region
       if (shouldApplyAscii) {
-        // Calculate brightness for ASCII
+        // Calculate brightness for ASCII using the new frame data
         const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
         const asciiChar = getAsciiChar(brightness);
-        drawAsciiPixel(ctx, x, y, asciiChar);
+        
+        // Clear the block first
+        ctx.fillStyle = 'black';
+        ctx.fillRect(x, y, 8, 8);
+        
+        // Draw ASCII character
+        ctx.fillStyle = 'white';
+        ctx.font = '8px monospace';
+        ctx.fillText(asciiChar, x, y + 8);
+        
         continue;
       }
 
-      // Handle the filtered region
-      if (shouldApplyFilter) {
+      // Handle the noise filter region
+      if (shouldApplyFilter && !shouldApplyAscii) {
         const diffR = Math.abs(next[i] - prev[i]);
         const diffG = Math.abs(next[i + 1] - prev[i + 1]);
         const diffB = Math.abs(next[i + 2] - prev[i + 2]);
         
         if (diffR > threshold || diffG > threshold || diffB > threshold) {
-          // Fill 8x8 block with noise if filter is enabled
+          // Fill 8x8 block with noise
           for (let by = 0; by < 8; by++) {
             for (let bx = 0; bx < 8; bx++) {
               const bi = ((y + by) * canvas.width + (x + bx)) * 4;
