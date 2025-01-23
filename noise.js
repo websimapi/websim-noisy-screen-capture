@@ -107,11 +107,18 @@ function updateChangedPixels(newImageData) {
         y >= cropRegion.y && 
         y < cropRegion.y + cropRegion.height;
 
-      const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
-      const shouldApplyAscii = useAsciiFilter && shouldApplyFilter;
+      // Determine which region we should apply effects to
+      const shouldApplyFilter = isFilterEnabled && (filterInsideRegion ? isInsideRegion : !isInsideRegion);
+      const shouldApplyAscii = useAsciiFilter && (filterInsideRegion ? isInsideRegion : !isInsideRegion);
 
-      // Handle ASCII region
-      if (shouldApplyAscii) {
+      // Calculate if pixel changed significantly
+      const diffR = Math.abs(next[i] - prev[i]);
+      const diffG = Math.abs(next[i + 1] - prev[i + 1]);
+      const diffB = Math.abs(next[i + 2] - prev[i + 2]);
+      const hasChanged = diffR > threshold || diffG > threshold || diffB > threshold;
+
+      // Handle ASCII filter
+      if (shouldApplyAscii && hasChanged) {
         // Calculate brightness for ASCII using the new frame data
         const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
         const asciiChar = getAsciiChar(brightness);
@@ -121,36 +128,27 @@ function updateChangedPixels(newImageData) {
         ctx.fillRect(x, y, 8, 8);
         
         // Draw ASCII character
-        ctx.fillStyle = 'white';
-        ctx.font = '8px monospace';
-        ctx.fillText(asciiChar, x, y + 8);
-        
+        drawAsciiPixel(ctx, x, y + 8, asciiChar);
         continue;
       }
 
-      // Handle the noise filter region
-      if (shouldApplyFilter && !shouldApplyAscii) {
-        const diffR = Math.abs(next[i] - prev[i]);
-        const diffG = Math.abs(next[i + 1] - prev[i + 1]);
-        const diffB = Math.abs(next[i + 2] - prev[i + 2]);
-        
-        if (diffR > threshold || diffG > threshold || diffB > threshold) {
-          // Fill 8x8 block with noise
-          for (let by = 0; by < 8; by++) {
-            for (let bx = 0; bx < 8; bx++) {
-              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
-              if (bi < current.length) {
-                const pixel = getRandomPixel();
-                current[bi] = pixel[0];
-                current[bi + 1] = pixel[1];
-                current[bi + 2] = pixel[2];
-                current[bi + 3] = pixel[3];
-              }
+      // Handle noise filter
+      if (shouldApplyFilter && !shouldApplyAscii && hasChanged) {
+        // Fill 8x8 block with noise
+        for (let by = 0; by < 8; by++) {
+          for (let bx = 0; bx < 8; bx++) {
+            const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+            if (bi < current.length) {
+              const pixel = getRandomPixel();
+              current[bi] = pixel[0];
+              current[bi + 1] = pixel[1];
+              current[bi + 2] = pixel[2];
+              current[bi + 3] = pixel[3];
             }
           }
         }
       } else {
-        // Non-filtered region shows video data
+        // Copy video data for unfiltered regions
         for (let by = 0; by < 8; by++) {
           for (let bx = 0; bx < 8; bx++) {
             const bi = ((y + by) * canvas.width + (x + bx)) * 4;
