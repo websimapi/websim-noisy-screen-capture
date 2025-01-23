@@ -117,7 +117,7 @@ function updateChangedPixels(newImageData) {
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
 
       // Process noise filter region first
-      if (shouldApplyFilter) {
+      if (shouldApplyFilter && isFilterEnabled) {
         const diffR = Math.abs(next[i] - prev[i]);
         const diffG = Math.abs(next[i + 1] - prev[i + 1]);
         const diffB = Math.abs(next[i + 2] - prev[i + 2]);
@@ -155,7 +155,7 @@ function updateChangedPixels(newImageData) {
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
       
       // Handle non-filtered regions
-      if (!shouldApplyFilter) {
+      if (!shouldApplyFilter || !isFilterEnabled) {
         if (useAsciiFilter) {
           // Calculate brightness for ASCII
           const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
@@ -199,10 +199,15 @@ function updateChangedPixels(newImageData) {
         filterRegion.height
       );
       
+      let anyPixelsSet = false;
+      
       for (let y = 0; y < filterRegion.height; y++) {
         for (let x = 0; x < filterRegion.width; x++) {
           const sourceIndex = ((filterRegion.y + y) * canvas.width + (filterRegion.x + x)) * 4;
           const targetIndex = (y * filterRegion.width + x) * 4;
+          if (current[sourceIndex + 3] > 0) { // Check if pixel is set
+            anyPixelsSet = true;
+          }
           regionData.data[targetIndex] = current[sourceIndex];
           regionData.data[targetIndex + 1] = current[sourceIndex + 1];
           regionData.data[targetIndex + 2] = current[sourceIndex + 2];
@@ -210,7 +215,9 @@ function updateChangedPixels(newImageData) {
         }
       }
       
-      ctx.putImageData(regionData, filterRegion.x, filterRegion.y);
+      if (anyPixelsSet) {
+        ctx.putImageData(regionData, filterRegion.x, filterRegion.y);
+      }
     }
   }
   
@@ -376,6 +383,9 @@ toggleRegionModeButton.addEventListener('click', () => {
   // Clear any previous frame to prevent ghosting
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Clear the previous frame data to force a complete redraw
+  previousImageData = null;
   
   // Regenerate noise if no capture is active
   if (!mediaStream) {
