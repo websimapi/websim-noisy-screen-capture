@@ -7,6 +7,8 @@ let toggleFilterButton = document.getElementById('toggleFilter');
 let toggleRegionModeButton = document.getElementById('toggleRegionMode');
 let sensitivitySlider = document.getElementById('sensitivity');
 let sensitivityValue = document.getElementById('sensitivityValue');
+let toggleMenuButton = document.getElementById('toggleMenu');
+let controlsPanel = document.querySelector('.controls');
 let mediaStream = null;
 let previousImageData = null;
 
@@ -296,6 +298,11 @@ toggleRegionModeButton.addEventListener('click', () => {
   if (!mediaStream) {
     generateNoise();
   }
+});
+
+// Add toggle menu handler
+toggleMenuButton.addEventListener('click', () => {
+  controlsPanel.classList.toggle('hidden');
 });
 
 // Handle visibility change
