@@ -83,7 +83,7 @@ function drawAsciiPixel(ctx, x, y, char) {
   ctx.fillText(char, x, y);
 }
 
-// Compare pixels and update only changed pixels
+// Compare pixels and update only changed ones
 function updateChangedPixels(newImageData) {
   if (!previousImageData) {
     previousImageData = newImageData;
@@ -96,10 +96,31 @@ function updateChangedPixels(newImageData) {
   const next = newImageData.data;
 
   const threshold = (sensitivity / 100) * 255;
-  
-  // Clear canvas for ASCII rendering
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Clear canvas only in ASCII regions
+  if (useAsciiFilter) {
+    if (cropRegion) {
+      if (filterInsideRegion) {
+        // Clear outside region for ASCII
+        ctx.fillStyle = 'black';
+        // Clear top
+        ctx.fillRect(0, 0, canvas.width, cropRegion.y);
+        // Clear bottom
+        ctx.fillRect(0, cropRegion.y + cropRegion.height, canvas.width, canvas.height - (cropRegion.y + cropRegion.height));
+        // Clear left
+        ctx.fillRect(0, cropRegion.y, cropRegion.x, cropRegion.height);
+        // Clear right
+        ctx.fillRect(cropRegion.x + cropRegion.width, cropRegion.y, canvas.width - (cropRegion.x + cropRegion.width), cropRegion.height);
+      } else {
+        // Clear inside region for ASCII
+        ctx.fillStyle = 'black';
+        ctx.fillRect(cropRegion.x, cropRegion.y, cropRegion.width, cropRegion.height);
+      }
+    } else {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }
 
   for (let y = 0; y < canvas.height; y += 8) {
     for (let x = 0; x < canvas.width; x += 8) {
@@ -114,19 +135,23 @@ function updateChangedPixels(newImageData) {
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
       const shouldApplyAscii = useAsciiFilter && (filterInsideRegion ? !isInsideRegion : isInsideRegion);
 
+      // Handle ASCII region
       if (shouldApplyAscii) {
         // Calculate brightness for ASCII
         const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
         const asciiChar = getAsciiChar(brightness);
         drawAsciiPixel(ctx, x, y, asciiChar);
-      } else if (shouldApplyFilter) {
-        // Apply noise filter to changed pixels
+        continue;
+      }
+
+      // Handle the filtered region
+      if (shouldApplyFilter) {
         const diffR = Math.abs(next[i] - prev[i]);
         const diffG = Math.abs(next[i + 1] - prev[i + 1]);
         const diffB = Math.abs(next[i + 2] - prev[i + 2]);
         
         if (diffR > threshold || diffG > threshold || diffB > threshold) {
-          // Fill 8x8 block with noise
+          // Fill 8x8 block with noise if filter is enabled
           for (let by = 0; by < 8; by++) {
             for (let bx = 0; bx < 8; bx++) {
               const bi = ((y + by) * canvas.width + (x + bx)) * 4;
@@ -140,26 +165,24 @@ function updateChangedPixels(newImageData) {
             }
           }
         }
-        // Draw the noise block to the canvas
-        ctx.putImageData(
-          currentImageData,
-          0, 0,
-          x, y,
-          8, 8
-        );
       } else {
-        // Draw regular video data for unfiltered regions
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 8;
-        tempCanvas.height = 8;
-        const tempCtx = tempCanvas.getContext('2d');
-        const blockData = new ImageData(new Uint8ClampedArray(next.buffer, i, 8 * 8 * 4), 8, 8);
-        tempCtx.putImageData(blockData, 0, 0);
-        ctx.drawImage(tempCanvas, x, y);
+        // Non-filtered region shows video data
+        for (let by = 0; by < 8; by++) {
+          for (let bx = 0; bx < 8; bx++) {
+            const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+            if (bi < current.length) {
+              current[bi] = next[bi];
+              current[bi + 1] = next[bi + 1];
+              current[bi + 2] = next[bi + 2];
+              current[bi + 3] = next[bi + 3];
+            }
+          }
+        }
       }
     }
   }
 
+  ctx.putImageData(currentImageData, 0, 0);
   previousImageData = newImageData;
 }
 
