@@ -17,6 +17,15 @@
       <input type="range" id="sensitivity" min="0" max="100" value="10">
       <span id="sensitivityValue">10%</span>
     </div>
+    <div class="slider-container ascii-settings">
+      <label for="asciiDetail">ASCII Detail:</label>
+      <input type="range" id="asciiDetail" min="4" max="16" value="8">
+      <span id="asciiDetailValue">8px</span>
+    </div>
+    <div class="color-picker-container ascii-settings">
+      <label for="asciiColor">ASCII Color:</label>
+      <input type="color" id="asciiColor" value="#ffffff">
+    </div>
   </div>
   <canvas id="noiseCanvas"></canvas>
   <script type="module" src="noise.js"></script>

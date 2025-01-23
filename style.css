@@ -98,6 +98,37 @@ body {
   min-width: 45px;
 }
 
+.ascii-settings {
+  display: none;
+}
+
+.ascii-settings.show {
+  display: flex;
+}
+
+.color-picker-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+
+.color-picker-container label {
+  color: black;
+  font-size: 14px;
+}
+
+#asciiColor {
+  width: 50px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 #toggleRegionMode {
   background: #4CAF50;
   color: white;

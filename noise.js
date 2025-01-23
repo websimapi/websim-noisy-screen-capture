@@ -26,10 +26,29 @@ let sensitivity = 10;
 let useAsciiFilter = false;
 const asciiChars = ['@', '#', '8', '&', 'o', ':', '*', '.', ' '];
 
+// ASCII settings
+let asciiDetail = 8;
+let asciiColor = '#ffffff';
+let asciiDetailSlider = document.getElementById('asciiDetail');
+let asciiDetailValue = document.getElementById('asciiDetailValue');
+let asciiColorPicker = document.getElementById('asciiColor');
+let asciiSettings = document.querySelectorAll('.ascii-settings');
+
 // Update sensitivity display
 sensitivitySlider.addEventListener('input', (e) => {
   sensitivity = parseInt(e.target.value);
   sensitivityValue.textContent = `${sensitivity}%`;
+});
+
+// Update ASCII detail display
+asciiDetailSlider.addEventListener('input', (e) => {
+  asciiDetail = parseInt(e.target.value);
+  asciiDetailValue.textContent = `${asciiDetail}px`;
+});
+
+// Update ASCII color
+asciiColorPicker.addEventListener('input', (e) => {
+  asciiColor = e.target.value;
 });
 
 // Set canvas size to window size
@@ -78,8 +97,8 @@ function getAsciiChar(brightness) {
 }
 
 function drawAsciiPixel(ctx, x, y, char) {
-  ctx.fillStyle = 'white';
-  ctx.font = '8px monospace';
+  ctx.fillStyle = asciiColor;
+  ctx.font = `${asciiDetail}px monospace`;
   ctx.fillText(char, x, y);
 }
 
@@ -97,15 +116,14 @@ function updateChangedPixels(newImageData) {
 
   const threshold = (sensitivity / 100) * 255;
   
-  // Clear canvas for ASCII redraw
   if (useAsciiFilter) {
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   // First pass: Process noise filter region based on original video data
-  for (let y = 0; y < canvas.height; y += 8) {
-    for (let x = 0; x < canvas.width; x += 8) {
+  for (let y = 0; y < canvas.height; y += asciiDetail) {
+    for (let x = 0; x < canvas.width; x += asciiDetail) {
       const i = (y * canvas.width + x) * 4;
       
       const isInsideRegion = cropRegion && 
@@ -116,16 +134,14 @@ function updateChangedPixels(newImageData) {
 
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
 
-      // Process noise filter region first
-      if (shouldApplyFilter && isFilterEnabled) {
+      if (shouldApplyFilter) {
         const diffR = Math.abs(next[i] - prev[i]);
         const diffG = Math.abs(next[i + 1] - prev[i + 1]);
         const diffB = Math.abs(next[i + 2] - prev[i + 2]);
         
         if (diffR > threshold || diffG > threshold || diffB > threshold) {
-          // Fill 8x8 block with noise
-          for (let by = 0; by < 8; by++) {
-            for (let bx = 0; bx < 8; bx++) {
+          for (let by = 0; by < asciiDetail; by++) {
+            for (let bx = 0; bx < asciiDetail; bx++) {
               const bi = ((y + by) * canvas.width + (x + bx)) * 4;
               if (bi < current.length) {
                 const pixel = getRandomPixel();
@@ -141,9 +157,9 @@ function updateChangedPixels(newImageData) {
     }
   }
 
-  // Second pass: Process non-filtered regions (either ASCII or video)
-  for (let y = 0; y < canvas.height; y += 8) {
-    for (let x = 0; x < canvas.width; x += 8) {
+  // Second pass: Process non-filtered regions
+  for (let y = 0; y < canvas.height; y += asciiDetail) {
+    for (let x = 0; x < canvas.width; x += asciiDetail) {
       const i = (y * canvas.width + x) * 4;
       
       const isInsideRegion = cropRegion && 
@@ -154,17 +170,14 @@ function updateChangedPixels(newImageData) {
 
       const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
       
-      // Handle non-filtered regions
-      if (!shouldApplyFilter || !isFilterEnabled) {
+      if (!shouldApplyFilter) {
         if (useAsciiFilter) {
-          // Calculate brightness for ASCII
           const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
           const asciiChar = getAsciiChar(brightness);
           drawAsciiPixel(ctx, x, y, asciiChar);
         } else {
-          // Show original video data
-          for (let by = 0; by < 8; by++) {
-            for (let bx = 0; bx < 8; bx++) {
+          for (let by = 0; by < asciiDetail; by++) {
+            for (let bx = 0; bx < asciiDetail; bx++) {
               const bi = ((y + by) * canvas.width + (x + bx)) * 4;
               if (bi < current.length) {
                 current[bi] = next[bi];
@@ -199,15 +212,10 @@ function updateChangedPixels(newImageData) {
         filterRegion.height
       );
       
-      let anyPixelsSet = false;
-      
       for (let y = 0; y < filterRegion.height; y++) {
         for (let x = 0; x < filterRegion.width; x++) {
           const sourceIndex = ((filterRegion.y + y) * canvas.width + (filterRegion.x + x)) * 4;
           const targetIndex = (y * filterRegion.width + x) * 4;
-          if (current[sourceIndex + 3] > 0) { // Check if pixel is set
-            anyPixelsSet = true;
-          }
           regionData.data[targetIndex] = current[sourceIndex];
           regionData.data[targetIndex + 1] = current[sourceIndex + 1];
           regionData.data[targetIndex + 2] = current[sourceIndex + 2];
@@ -215,9 +223,7 @@ function updateChangedPixels(newImageData) {
         }
       }
       
-      if (anyPixelsSet) {
-        ctx.putImageData(regionData, filterRegion.x, filterRegion.y);
-      }
+      ctx.putImageData(regionData, filterRegion.x, filterRegion.y);
     }
   }
   
@@ -380,13 +386,6 @@ toggleRegionModeButton.addEventListener('click', () => {
   filterInsideRegion = !filterInsideRegion;
   toggleRegionModeButton.textContent = filterInsideRegion ? 'Filter Inside Region' : 'Filter Outside Region';
   
-  // Clear any previous frame to prevent ghosting
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  // Clear the previous frame data to force a complete redraw
-  previousImageData = null;
-  
   // Regenerate noise if no capture is active
   if (!mediaStream) {
     generateNoise();
@@ -402,6 +401,11 @@ const toggleAsciiButton = document.getElementById('toggleAscii');
 toggleAsciiButton.addEventListener('click', () => {
   useAsciiFilter = !useAsciiFilter;
   toggleAsciiButton.textContent = useAsciiFilter ? 'Disable ASCII' : 'Enable ASCII';
+  
+  // Toggle ASCII settings visibility
+  asciiSettings.forEach(setting => {
+    setting.classList.toggle('show', useAsciiFilter);
+  });
   
   // Regenerate display if no capture is active
   if (!mediaStream) {
