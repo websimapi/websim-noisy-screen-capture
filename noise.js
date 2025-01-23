@@ -37,7 +37,8 @@ let asciiSettings = document.querySelectorAll('.ascii-settings');
 let asciiColorToggle = document.getElementById('asciiColorToggle');
 
 // Rainbow effect settings
-let useRainbowEffect = false;
+let useNoiseRainbow = false;
+let useAsciiRainbow = false;
 let rainbowHue = 0;
 const RAINBOW_SPEED = 2; // Hue change per frame
 
@@ -45,10 +46,10 @@ const RAINBOW_SPEED = 2; // Hue change per frame
 function getRandomPixel() {
   const value = Math.random() > 0.5 ? 255 : 0;
   
-  if (useRainbowEffect) {
+  if (useNoiseRainbow) {
     if (value === 255) {
       // Convert HSL to RGB for white pixels
-      const hue = (rainbowHue + Math.random() * 30) % 360; // Add some random variation
+      const hue = (rainbowHue + Math.random() * 30) % 360;
       const [r, g, b] = hslToRgb(hue / 360, 1, 0.5);
       return [r, g, b, 255];
     } else {
@@ -146,7 +147,7 @@ function getAsciiChar(brightness) {
 
 // Update ASCII drawing to support rainbow effect
 function drawAsciiPixel(ctx, x, y, char, originalColor) {
-  if (useRainbowEffect) {
+  if (useAsciiRainbow) {
     const hue = (rainbowHue + Math.random() * 30) % 360;
     const [r, g, b] = hslToRgb(hue / 360, 1, 0.5);
     ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
@@ -308,7 +309,7 @@ async function startCapture() {
     const processFrame = () => {
       if (!mediaStream) return;
 
-      if (useRainbowEffect) {
+      if (useNoiseRainbow || useAsciiRainbow) {
         rainbowHue = (rainbowHue + RAINBOW_SPEED) % 360;
       }
 
@@ -487,13 +488,23 @@ asciiColorToggle.addEventListener('click', () => {
   }
 });
 
-// Add rainbow effect toggle button handler
-const toggleRainbowButton = document.getElementById('toggleRainbow');
-toggleRainbowButton.addEventListener('click', () => {
-  useRainbowEffect = !useRainbowEffect;
-  toggleRainbowButton.textContent = useRainbowEffect ? 'Disable Rainbow' : 'Enable Rainbow';
+// Add rainbow effect toggle buttons handlers
+const toggleNoiseRainbowButton = document.getElementById('toggleNoiseRainbow');
+const toggleAsciiRainbowButton = document.getElementById('toggleAsciiRainbow');
+
+toggleNoiseRainbowButton.addEventListener('click', () => {
+  useNoiseRainbow = !useNoiseRainbow;
+  toggleNoiseRainbowButton.textContent = useNoiseRainbow ? 'Disable Noise Rainbow' : 'Enable Noise Rainbow';
   
-  // Regenerate display if no capture is active
+  if (!mediaStream) {
+    generateNoise();
+  }
+});
+
+toggleAsciiRainbowButton.addEventListener('click', () => {
+  useAsciiRainbow = !useAsciiRainbow;
+  toggleAsciiRainbowButton.textContent = useAsciiRainbow ? 'Disable ASCII Rainbow' : 'Enable ASCII Rainbow';
+  
   if (!mediaStream) {
     generateNoise();
   }
