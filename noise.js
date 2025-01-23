@@ -9,8 +9,6 @@ let sensitivitySlider = document.getElementById('sensitivity');
 let sensitivityValue = document.getElementById('sensitivityValue');
 let toggleMenuButton = document.getElementById('toggleMenu');
 let controlsPanel = document.querySelector('.controls');
-let filterTypeSelect = document.getElementById('filterType');
-let asciiOutput = document.getElementById('asciiOutput');
 let mediaStream = null;
 let previousImageData = null;
 
@@ -25,132 +23,27 @@ let isDragging = false;
 let isFilterEnabled = true;
 let filterInsideRegion = true;
 let sensitivity = 10;
-let currentFilterType = 'noise';
+let useAsciiFilter = false;
+const asciiChars = ['@', '#', '8', '&', 'o', ':', '*', '.', ' '];
 
-// ASCII characters from darkest to lightest
-const asciiChars = '@%#*+=-:. ';
+// Update sensitivity display
+sensitivitySlider.addEventListener('input', (e) => {
+  sensitivity = parseInt(e.target.value);
+  sensitivityValue.textContent = `${sensitivity}%`;
+});
 
-// Convert RGB to brightness value (0-255)
-function getBrightness(r, g, b) {
-  return Math.floor((r + g + b) / 3);
-}
-
-// Convert brightness to ASCII character
-function getAsciiChar(brightness) {
-  const charIndex = Math.floor(brightness / 256 * asciiChars.length);
-  return asciiChars[charIndex];
-}
-
-// Create ASCII art from image data
-function createAsciiArt(imageData, x, y, width, height) {
-  const blockSize = 8; // Size of each ASCII character block
-  const cols = Math.floor(width / blockSize);
-  const rows = Math.floor(height / blockSize);
-  let asciiArt = new Uint8ClampedArray(width * height * 4);
-
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // Sample the center pixel of each block
-      const pixelX = x + (col * blockSize) + Math.floor(blockSize / 2);
-      const pixelY = y + (row * blockSize) + Math.floor(blockSize / 2);
-      const i = (pixelY * canvas.width + pixelX) * 4;
-      
-      const r = imageData.data[i];
-      const g = imageData.data[i + 1];
-      const b = imageData.data[i + 2];
-      
-      const brightness = getBrightness(r, g, b);
-      const color = brightness; // Use brightness as grayscale value
-
-      // Fill the block with the ASCII representation
-      for (let by = 0; by < blockSize && y + (row * blockSize) + by < height; by++) {
-        for (let bx = 0; bx < blockSize && x + (col * blockSize) + bx < width; bx++) {
-          const targetX = x + (col * blockSize) + bx;
-          const targetY = y + (row * blockSize) + by;
-          const targetIndex = (targetY * width + targetX) * 4;
-          
-          asciiArt[targetIndex] = color;     // R
-          asciiArt[targetIndex + 1] = color; // G
-          asciiArt[targetIndex + 2] = color; // B
-          asciiArt[targetIndex + 3] = 255;   // A
-        }
-      }
-    }
+// Set canvas size to window size
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  if (!mediaStream) {
+    generateNoise();
   }
-
-  return asciiArt;
 }
 
-// Compare pixels and update only changed ones
-function updateChangedPixels(newImageData) {
-  if (!previousImageData) {
-    previousImageData = newImageData;
-    return;
-  }
-
-  const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const current = currentImageData.data;
-  const prev = previousImageData.data;
-  const next = newImageData.data;
-
-  const threshold = (sensitivity / 100) * 255;
-
-  for (let y = 0; y < canvas.height; y++) {
-    for (let x = 0; x < canvas.width; x++) {
-      const i = (y * canvas.width + x) * 4;
-      
-      const isInsideRegion = cropRegion && 
-        x >= cropRegion.x && 
-        x < cropRegion.x + cropRegion.width && 
-        y >= cropRegion.y && 
-        y < cropRegion.y + cropRegion.height;
-
-      const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
-
-      const diffR = Math.abs(next[i] - prev[i]);
-      const diffG = Math.abs(next[i + 1] - prev[i + 1]);
-      const diffB = Math.abs(next[i + 2] - prev[i + 2]);
-      const pixelChanged = diffR > threshold || diffG > threshold || diffB > threshold;
-
-      if (shouldApplyFilter && isFilterEnabled) {
-        if (currentFilterType === 'noise' && pixelChanged) {
-          const pixel = getRandomPixel();
-          current[i] = pixel[0];
-          current[i + 1] = pixel[1];
-          current[i + 2] = pixel[2];
-          current[i + 3] = pixel[3];
-        } else if (currentFilterType === 'ascii') {
-          // Create ASCII art for the filtered region
-          const region = {
-            x: filterInsideRegion ? cropRegion.x : 0,
-            y: filterInsideRegion ? cropRegion.y : 0,
-            width: filterInsideRegion ? cropRegion.width : canvas.width,
-            height: filterInsideRegion ? cropRegion.height : canvas.height
-          };
-          
-          if (x >= region.x && x < region.x + region.width &&
-              y >= region.y && y < region.y + region.height) {
-            const asciiData = createAsciiArt(newImageData, region.x, region.y, region.width, region.height);
-            const asciiIndex = ((y - region.y) * region.width + (x - region.x)) * 4;
-            current[i] = asciiData[asciiIndex];
-            current[i + 1] = asciiData[asciiIndex + 1];
-            current[i + 2] = asciiData[asciiIndex + 2];
-            current[i + 3] = asciiData[asciiIndex + 3];
-          }
-        }
-      } else if (pixelChanged || shouldApplyFilter !== filterInsideRegion) {
-        // Copy video data for non-filtered regions or when pixels change
-        current[i] = next[i];
-        current[i + 1] = next[i + 1];
-        current[i + 2] = next[i + 2];
-        current[i + 3] = next[i + 3];
-      }
-    }
-  }
-
-  ctx.putImageData(currentImageData, 0, 0);
-  previousImageData = newImageData;
-}
+// Initialize canvas size
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
 // Generate random noise for a pixel
 function getRandomPixel() {
@@ -179,21 +72,102 @@ function generateNoise(region = null) {
   ctx.putImageData(imageData, region ? region.x : 0, region ? region.y : 0);
 }
 
-// Initial noise generation
-generateNoise();
-
-// Set canvas size to window size
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  if (!mediaStream) {
-    generateNoise();
-  }
+function getAsciiChar(brightness) {
+  const index = Math.floor(brightness / 255 * (asciiChars.length - 1));
+  return asciiChars[index];
 }
 
-// Initialize canvas size
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+function drawAsciiPixel(ctx, x, y, char) {
+  ctx.fillStyle = 'white';
+  ctx.font = '8px monospace';
+  ctx.fillText(char, x, y);
+}
+
+// Compare pixels and update only changed ones
+function updateChangedPixels(newImageData) {
+  if (!previousImageData) {
+    previousImageData = newImageData;
+    return;
+  }
+
+  const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const current = currentImageData.data;
+  const prev = previousImageData.data;
+  const next = newImageData.data;
+
+  const threshold = (sensitivity / 100) * 255;
+  
+  // Clear canvas for ASCII rendering
+  if (useAsciiFilter) {
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  for (let y = 0; y < canvas.height; y += 8) {
+    for (let x = 0; x < canvas.width; x += 8) {
+      const i = (y * canvas.width + x) * 4;
+      
+      const isInsideRegion = cropRegion && 
+        x >= cropRegion.x && 
+        x < cropRegion.x + cropRegion.width && 
+        y >= cropRegion.y && 
+        y < cropRegion.y + cropRegion.height;
+
+      const shouldApplyFilter = filterInsideRegion ? isInsideRegion : !isInsideRegion;
+      const shouldApplyAscii = useAsciiFilter && (filterInsideRegion ? !isInsideRegion : isInsideRegion);
+
+      // Handle ASCII region
+      if (shouldApplyAscii) {
+        // Calculate brightness for ASCII
+        const brightness = (next[i] + next[i + 1] + next[i + 2]) / 3;
+        const asciiChar = getAsciiChar(brightness);
+        drawAsciiPixel(ctx, x, y, asciiChar);
+        continue;
+      }
+
+      // Handle the filtered region
+      if (shouldApplyFilter) {
+        const diffR = Math.abs(next[i] - prev[i]);
+        const diffG = Math.abs(next[i + 1] - prev[i + 1]);
+        const diffB = Math.abs(next[i + 2] - prev[i + 2]);
+        
+        if (diffR > threshold || diffG > threshold || diffB > threshold) {
+          // Fill 8x8 block with noise if filter is enabled
+          for (let by = 0; by < 8; by++) {
+            for (let bx = 0; bx < 8; bx++) {
+              const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+              if (bi < current.length) {
+                const pixel = getRandomPixel();
+                current[bi] = pixel[0];
+                current[bi + 1] = pixel[1];
+                current[bi + 2] = pixel[2];
+                current[bi + 3] = pixel[3];
+              }
+            }
+          }
+        }
+      } else {
+        // Non-filtered region shows video data
+        for (let by = 0; by < 8; by++) {
+          for (let bx = 0; bx < 8; bx++) {
+            const bi = ((y + by) * canvas.width + (x + bx)) * 4;
+            if (bi < current.length) {
+              current[bi] = next[bi];
+              current[bi + 1] = next[bi + 1];
+              current[bi + 2] = next[bi + 2];
+              current[bi + 3] = next[bi + 3];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!useAsciiFilter) {
+    ctx.putImageData(currentImageData, 0, 0);
+  }
+  previousImageData = newImageData;
+}
 
 // Handle screen capture
 async function startCapture() {
@@ -362,11 +336,14 @@ toggleMenuButton.addEventListener('click', () => {
   controlsPanel.classList.toggle('hidden');
 });
 
-// Add filter type change handler
-filterTypeSelect.addEventListener('change', (e) => {
-  currentFilterType = e.target.value;
+const toggleAsciiButton = document.getElementById('toggleAscii');
+toggleAsciiButton.addEventListener('click', () => {
+  useAsciiFilter = !useAsciiFilter;
+  toggleAsciiButton.textContent = useAsciiFilter ? 'Disable ASCII' : 'Enable ASCII';
+  
+  // Regenerate display if no capture is active
   if (!mediaStream) {
-    generateNoise(cropRegion);
+    generateNoise();
   }
 });
 
@@ -378,8 +355,5 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// Update sensitivity display
-sensitivitySlider.addEventListener('input', (e) => {
-  sensitivity = parseInt(e.target.value);
-  sensitivityValue.textContent = `${sensitivity}%`;
-});
+// Initial noise generation
+generateNoise();
